@@ -5,8 +5,22 @@ from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_tavily import TavilySearch
+from pydantic import BaseModel, Field
 
 load_dotenv()
+
+
+class Source(BaseModel):
+    """A source reference."""
+    name: str = Field(description="Title of the source")
+    url: str = Field(description="URL of the source")
+
+
+class AgentResponse(BaseModel):
+    """Structured response with answer and sources."""
+    answer: str = Field(description="The answer to the query")
+    sources: list[Source] = Field(description="Sources used")
+
 
 # Config
 MODEL = "gemini-2.5-flash"
@@ -28,11 +42,12 @@ agent = create_agent(
     model=llm.bind_tools([tavily], tool_choice="tavily_search"),
     tools=[tavily],
     system_prompt=SYSTEM_PROMPT,
+    response_format=AgentResponse,
 )
 
 
-def run(query: str) -> str:
-    """Run agent and return response."""
+def run(query: str) -> AgentResponse:
+    """Run agent and return structured response."""
     result = agent.invoke(
         {"messages": [HumanMessage(content=query)]},
         config={"recursion_limit": 10},
@@ -42,14 +57,24 @@ def run(query: str) -> str:
     # Log searches
     searches = [m for m in messages if isinstance(m, ToolMessage)]
     if searches:
-        print(f"[searched {len(searches)}x]")
+        print(f"[searched {len(searches)}x]\n")
 
-    # Extract final response
-    content = messages[-1].content
-    if isinstance(content, list):
-        return "\n".join(b["text"] for b in content if b.get("type") == "text")
-    return content
+    # Return structured response
+    return result["structured_response"]
+
+
+def print_response(response: AgentResponse) -> None:
+    """Print response in readable format."""
+    print(response.answer)
+
+    if response.sources:
+        print("\n" + "─" * 40)
+        print("Sources:")
+        for src in response.sources:
+            print(f"  • {src.name}")
+            print(f"    {src.url}")
 
 
 if __name__ == "__main__":
-    print(run("AI engineer average salary in Brazil 2026"))
+    response = run("AI engineer average salary in Brazil 2026")
+    print_response(response)
