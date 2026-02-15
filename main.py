@@ -4,9 +4,11 @@ from langchain.tools import tool
 from langgraph.prebuilt import create_react_agent
 from langchain_google_genai import ChatGoogleGenerativeAI as gemini
 from langchain_core.messages import HumanMessage
+from tavily import TavilyClient
 
 load_dotenv()
 
+tavily = TavilyClient()
 
 @tool
 def search(query: str) -> str:
@@ -19,7 +21,8 @@ def search(query: str) -> str:
     Returns:
         str: The search results.
     """
-    return f"Search result for {query}"
+    # tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    return tavily.search(query=query)
 
 
 llm = gemini(google_api_key=os.getenv("GOOGLE_API_KEY"), model="gemini-3-flash-preview")
