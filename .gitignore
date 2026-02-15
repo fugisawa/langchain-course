@@ -61,3 +61,7 @@ dmypy.json
 
 # Project Specific
 GEMINI.md
+
+# Claude Code
+CLAUDE.md
+.claude/
