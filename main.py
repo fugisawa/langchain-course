@@ -7,7 +7,7 @@ the web using Tavily and respond with summaries powered by Google Gemini.
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_tavily import TavilySearch
 
@@ -19,25 +19,40 @@ RECURSION_LIMIT = 50
 TAVILY_MAX_RESULTS = 5
 GEMINI_MODEL = "gemini-2.5-flash"
 
-# System prompt for the agent
-SYSTEM_PROMPT = """You are a helpful research assistant.
-Use the search tool to find accurate, up-to-date information.
-Provide concise summaries based on search results.
-Do not loop unnecessarily - search once and summarize."""
+# System prompt for the agent - EXPLICIT about tool usage
+SYSTEM_PROMPT = """You are a research assistant that MUST use the tavily_search tool.
+
+IMPORTANT: You MUST call the tavily_search tool for EVERY user query.
+DO NOT answer from memory. DO NOT make up information.
+ALWAYS search first, then summarize the results.
+
+Workflow:
+1. Receive user query
+2. Call tavily_search with an appropriate search query
+3. Analyze the search results
+4. Provide a summary based ONLY on the search results"""
 
 # Initialize tools
 tavily_search = TavilySearch(max_results=TAVILY_MAX_RESULTS, topic="general")
 
-# Initialize LLM (uses GOOGLE_API_KEY from environment)
-llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.7)
+# Initialize LLM with tool_choice to force tool usage
+llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.3)
 
-# Create agent using LangChain v1 API
-agent = create_agent(model=llm, tools=[tavily_search], system_prompt=SYSTEM_PROMPT)
+# Bind tools with tool_choice="any" to force tool usage
+llm_with_forced_tools = llm.bind_tools([tavily_search], tool_choice="any")
+
+# Create agent using the model with forced tool choice
+agent = create_agent(
+    model=llm_with_forced_tools, tools=[tavily_search], system_prompt=SYSTEM_PROMPT
+)
 
 
 def main() -> None:
     """Run the AI agent with a sample query."""
     query = "Search for three AI engineer opportunities in Brazil on LinkedIn and tell me the salary range."
+
+    print(f"Query: {query}\n")
+    print("=" * 60)
 
     try:
         result = agent.invoke(
@@ -45,8 +60,29 @@ def main() -> None:
             config={"recursion_limit": RECURSION_LIMIT},
         )
 
+        # Debug: Show all messages to verify tool was called
+        messages = result["messages"]
+        tool_calls_made = 0
+
+        for i, msg in enumerate(messages):
+            msg_type = type(msg).__name__
+
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                tool_calls_made += len(msg.tool_calls)
+                for tc in msg.tool_calls:
+                    print(
+                        f"[TOOL CALL] {tc['name']}: {tc['args'].get('query', 'N/A')[:80]}..."
+                    )
+
+            if isinstance(msg, ToolMessage):
+                print(f"[TOOL RESULT] {msg.name}: {str(msg.content)[:100]}...")
+
+        print("=" * 60)
+        print(f"Total tool calls: {tool_calls_made}")
+        print("=" * 60 + "\n")
+
         # Extract and print the final response
-        final_message = result["messages"][-1]
+        final_message = messages[-1]
         content = final_message.content
 
         # Handle multimodal content (Gemini returns list of content blocks)
@@ -60,6 +96,9 @@ def main() -> None:
 
     except Exception as e:
         print(f"Error executing agent: {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
