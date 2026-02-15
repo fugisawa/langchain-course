@@ -47,7 +47,16 @@ def main() -> None:
 
         # Extract and print the final response
         final_message = result["messages"][-1]
-        print(final_message.content)
+        content = final_message.content
+
+        # Handle multimodal content (Gemini returns list of content blocks)
+        if isinstance(content, list):
+            text_parts = [
+                block["text"] for block in content if block.get("type") == "text"
+            ]
+            print("\n".join(text_parts))
+        else:
+            print(content)
 
     except Exception as e:
         print(f"Error executing agent: {e}")
